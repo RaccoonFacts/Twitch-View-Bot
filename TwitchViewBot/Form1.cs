@@ -1,25 +1,21 @@
-﻿using System;
+﻿using OpenQA.Selenium;
+using OpenQA.Selenium.Chrome;
+using System;
 using System.Collections.Generic;
 using System.Configuration;
-using System.ComponentModel;
-using System.Data;
 using System.Diagnostics;
-using System.Drawing;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using OpenQA.Selenium;
-using OpenQA.Selenium.Chrome;
 
 namespace TwitchViewBot
 {
-    public partial class Form1: Form
+    public partial class Form1 : Form
     {
         private static Process torProcess;
         private static List<ChromeDriver> drivers = new List<ChromeDriver>();
         private static int viewerCount = 2; // Default viewer count
-        private static string channelName = "LassieLou"; // Default channel
+        private static string channelName = "default"; // Default channel
         private Configuration config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
         private bool keepRefreshing = false;
         public Form1()
@@ -33,7 +29,7 @@ namespace TwitchViewBot
 
         private void LoadSettings()
         {
-            userNameBox.Text = config.AppSettings.Settings["ChannelName"]?.Value ?? "LassieLou";
+            userNameBox.Text = config.AppSettings.Settings["ChannelName"]?.Value ?? "default";
             numViewersTxt.Text = config.AppSettings.Settings["ViewerCount"]?.Value ?? "2";
             refreshInterval.Value = int.TryParse(config.AppSettings.Settings["RefreshInterval"]?.Value, out int interval) ? interval : 10;
         }
@@ -110,6 +106,7 @@ namespace TwitchViewBot
             keepRefreshing = false;
             Cleanup();
             Application.Exit();
+
         }
 
         private void StartTor()
@@ -127,7 +124,7 @@ namespace TwitchViewBot
             };
             torProcess.Start();
             Log("Starting Tor...");
-            Task.Delay(10000).Wait(); // Wait for Tor to bootstrap
+            Task.Delay(8000).Wait(); // Wait for Tor to bootstrap
             Log("Tor initialized.");
         }
 
@@ -174,40 +171,10 @@ namespace TwitchViewBot
                 Log($"Viewer {viewerId + 1}: Video element exists: {videoExists}");
                 if (Convert.ToBoolean(videoExists))
                 {
-                    driver.ExecuteScript("document.querySelector('video')?.play();");
-                    Log($"Viewer {viewerId + 1}: Video play attempted.");
 
-                    driver.ExecuteScript("document.querySelector('video')?.play();");
-                    Log($"Viewer {viewerId + 1}: Video play attempted.");
+                    ClickVideo(driver, viewerId).Wait();
 
-                    // Set lowest quality (160p)
-                    driver.ExecuteScript(@"
-                var player = document.querySelector('.video-player');
-                if (player) {
-                    var settingsButton = document.querySelector('button[data-a-target=""player-settings-button""]');
-                    if (settingsButton) {
-                        settingsButton.click(); // Open settings
-                        setTimeout(function() {
-                            var qualityMenu = document.querySelector('button[data-a-target=""player-settings-menu-item-quality""]');
-                            if (qualityMenu) {
-                                qualityMenu.click(); // Open quality options
-                                setTimeout(function() {
-                                    var qualityOptions = document.querySelectorAll('input[data-a-target=""tw-radio""]');
-                                    if (qualityOptions.length > 0) {
-                                        var lowestQuality = qualityOptions[qualityOptions.length - 1]; // Last option is lowest (160p)
-                                        lowestQuality.click();
-                                    }
-                                }, 1000);
-                            }
-                        }, 1000);
-                    }
                 }
-            ");
-                    Task.Delay(100).Wait(); // Wait for quality change to apply
-                    Log($"Viewer {viewerId + 1}: Set to lowest quality (160p).");
-                
-
-            }
                 else
                 {
                     var errorText = driver.FindElement(By.XPath("//*[@id=\'root\']/div/div[1]/div/main/div[1]/div[3]/div/div/div[2]/div/div[2]/div/div[3]/div/div/div[7]/div/div[3]/button")).Enabled;
@@ -233,6 +200,52 @@ namespace TwitchViewBot
             }
         }
 
+
+
+        private async Task ClickVideo(ChromeDriver driver, int viewerId)
+        {
+            try
+            {
+                driver.ExecuteScript("document.querySelector('video')?.play();");
+                Log($"Viewer {viewerId + 1}: Video play attempted.");
+
+                driver.ExecuteScript("document.querySelector('video')?.play();");
+                Log($"Viewer {viewerId + 1}: Video play attempted.");
+
+                // Set lowest quality (160p)
+                driver.ExecuteScript(@"
+                var player = document.querySelector('.video-player');
+                if (player) {
+                    var settingsButton = document.querySelector('button[data-a-target=""player-settings-button""]');
+                    if (settingsButton) {
+                        settingsButton.click(); // Open settings
+                        setTimeout(function() {
+                            var qualityMenu = document.querySelector('button[data-a-target=""player-settings-menu-item-quality""]');
+                            if (qualityMenu) {
+                                qualityMenu.click(); // Open quality options
+                                setTimeout(function() {
+                                    var qualityOptions = document.querySelectorAll('input[data-a-target=""tw-radio""]');
+                                    if (qualityOptions.length > 0) {
+                                        var lowestQuality = qualityOptions[qualityOptions.length - 1]; // Last option is lowest (160p)
+                                        lowestQuality.click();
+                                    }
+                                }, 1000);
+                            }
+                        }, 1000);
+                    }
+                }
+            ");
+                Task.Delay(100).Wait(); // Wait for quality change to apply
+                Log($"Viewer {viewerId + 1}: Set to lowest quality (160p).");
+            }
+            catch (Exception ex)
+            {
+                Log($"Viewer {viewerId + 1} failed: {ex.Message}");
+                lock (drivers) { drivers.RemoveAll(d => d == null || d.SessionId == null); } // Clean up failed drivers
+                UpdateViewerCount();
+            }
+
+        }
         private async Task RefreshViewers()
         {
             while (keepRefreshing)
@@ -247,6 +260,8 @@ namespace TwitchViewBot
                         {
                             try
                             {
+
+
                                 driver.Navigate().Refresh();
                                 Log($"Refreshed viewer: {driver.Url}");
                             }
@@ -272,9 +287,9 @@ namespace TwitchViewBot
             //this is completely wrong wtf
             int count = drivers.Count;
             if (liveViewerLabel.InvokeRequired)
-                liveViewerLabel.Invoke(new Action(() => liveViewerLabel.Text = $"Live Viewers: {count}"));
+                liveViewerLabel.Invoke(new Action(() => liveViewerLabel.Text = $"{count}"));
             else
-                liveViewerLabel.Text = $"Live Viewers: {count}";
+                liveViewerLabel.Text = $"{count}";
         }
 
         private void KillAllProcesses()
