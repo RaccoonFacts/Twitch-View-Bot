@@ -1,5 +1,6 @@
 ﻿using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
+using OpenQA.Selenium.DevTools.V131.Runtime;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
@@ -18,6 +19,8 @@ namespace TwitchViewBot
         private static string channelName = "default"; // Default channel
         private Configuration config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
         private bool keepRefreshing = false;
+        public int extViewer = 0;
+
         public Form1()
         {
             InitializeComponent();
@@ -62,7 +65,7 @@ namespace TwitchViewBot
         }
         private async void StartBtn_Click(object sender, EventArgs e)
         {
-            startBtn.Enabled = false;
+            //startBtn.Enabled = false; // optional comment out 
             if (!int.TryParse(numViewersTxt.Text, out viewerCount) || viewerCount < 1)
             {
                 Log("Error: Please enter a valid number of viewers (1 or more).");
@@ -90,7 +93,7 @@ namespace TwitchViewBot
             {
                 Log($"Error: {ex.Message}");
             }
-            startBtn.Enabled = true;
+            //   startBtn.Enabled = true; //optional comment out
         }
 
         private void StopBtn_Click(object sender, EventArgs e)
@@ -138,12 +141,14 @@ namespace TwitchViewBot
                     Log("Cycling Tor circuit...");
                 }
                 StartTor();
+                extViewer = i;
                 await Task.Run(() => LaunchViewer(i));
+
                 UpdateViewerCount(); // Update after each viewer
             }
         }
 
-        private void LaunchViewer(int viewerId)
+        private async void LaunchViewer(int viewerId)
         {
             try
             {
@@ -172,7 +177,7 @@ namespace TwitchViewBot
                 if (Convert.ToBoolean(videoExists))
                 {
 
-                    ClickVideo(driver, viewerId).Wait();
+                    ClickVideo(driver, viewerId);
 
                 }
                 else
@@ -202,7 +207,7 @@ namespace TwitchViewBot
 
 
 
-        private async Task ClickVideo(ChromeDriver driver, int viewerId)
+        private async void ClickVideo(ChromeDriver driver, int viewerId)
         {
             try
             {
@@ -254,16 +259,18 @@ namespace TwitchViewBot
                 if (minutes > 0)
                 {
                     await Task.Delay(minutes * 60 * 1000); // Convert to milliseconds
-                    lock (drivers)
+                    //lock (drivers)
                     {
                         foreach (var driver in drivers)
                         {
                             try
                             {
-
-
                                 driver.Navigate().Refresh();
                                 Log($"Refreshed viewer: {driver.Url}");
+                                Task.Delay(30000).Wait();
+                                await Task.Run(() => ClickVideo(driver, extViewer));
+
+
                             }
                             catch (Exception ex)
                             {
@@ -286,10 +293,15 @@ namespace TwitchViewBot
         {
             //this is completely wrong wtf
             int count = drivers.Count;
-            if (liveViewerLabel.InvokeRequired)
+            if
+                 (liveViewerLabel.InvokeRequired)
+            {
                 liveViewerLabel.Invoke(new Action(() => liveViewerLabel.Text = $"{count}"));
+            }
             else
+            {
                 liveViewerLabel.Text = $"{count}";
+            }
         }
 
         private void KillAllProcesses()
